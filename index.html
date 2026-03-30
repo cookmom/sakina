@@ -33,14 +33,12 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 .vis-panel svg{width:100%;height:100%}
 
 /* 3D canvas */
-#canvas3d{display:block;width:100%;height:100%}
 
 /* Flatmap panel */
 #panelFlatmap svg{width:100%;height:100%}
 
 /* TRIBE panel */
 .tribe-wrap{width:100%;height:100%;display:flex;flex-direction:column}
-.tribe-wrap iframe{flex:1;border:none;width:100%}
 .tribe-credit{font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);text-align:center;padding:.5rem;border-top:1px solid rgba(44,62,107,.1);background:rgba(44,62,107,.03)}
 
 /* ── brain bar ────────────────────────────────────────── */
@@ -156,15 +154,11 @@ window.switchTab = function(id) {
   }
 
   if (id === 'panelTribe' && !tribeLoaded) {
-    document.getElementById('tribeFrame').src = 'https://aidemos.atmeta.com/tribev2/'
     tribeLoaded = true
   }
 }
 
 // Resize 3D canvas when window resizes
-window.addEventListener('resize', () => {
-  if (brain3dReady) resize3D(document.getElementById('panel3d'))
-})
 
 // ── Quran.com API ─────────────────────────────────────────────
 async function loadSurah(num) {
