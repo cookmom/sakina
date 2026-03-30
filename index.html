@@ -70,6 +70,20 @@ h1{font-size:clamp(1.8rem,5vw,3rem);font-weight:200;letter-spacing:-.02em;text-a
   <span id="scrubberLabel">t=0 / 47</span>
 </div>
 
+
+<div style="width:100%;max-width:700px;margin:.5rem 0;padding:.5rem;border:1px solid rgba(44,62,107,.1);font-size:.6rem;letter-spacing:.06em;color:var(--dim)">
+  <b style="text-transform:uppercase;letter-spacing:.1em">Dev Controls</b>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">
+    <label>Cam X <input type="range" id="camX" min="-300" max="300" value="-200" style="width:80px" oninput="window._updateCam()"><span id="camXv">-200</span></label>
+    <label>Cam Y <input type="range" id="camY" min="-200" max="200" value="20" style="width:80px" oninput="window._updateCam()"><span id="camYv">20</span></label>
+    <label>Cam Z <input type="range" id="camZ" min="-300" max="300" value="0" style="width:80px" oninput="window._updateCam()"><span id="camZv">0</span></label>
+    <label>FOV <input type="range" id="camFov" min="10" max="90" value="30" style="width:80px" oninput="window._updateCam()"><span id="camFovV">30</span></label>
+    <label>Rotate <input type="checkbox" id="camRotate" onchange="window._toggleRotate()"> <span id="rotLabel">OFF</span></label>
+    <label>Point Size <input type="range" id="ptSize" min="0.5" max="5" value="1.5" step="0.1" style="width:80px" oninput="window._updatePtSize()"><span id="ptSizeV">1.5</span></label>
+    <label>Opacity <input type="range" id="brainOpacity" min="0.1" max="1" value="0.88" step="0.02" style="width:80px" oninput="window._updateOpacity()"><span id="opV">0.88</span></label>
+    <label>BG <select id="bgColor" onchange="window._updateBg()"><option value="#f5f0e6">Paper</option><option value="#0d0d12">Dark</option><option value="#1a1a2e">Navy</option><option value="#ffffff">White</option></select></label>
+  </div>
+</div>
 <p class="status" id="status">Select a surah to begin</p>
 <audio id="audio" crossorigin="anonymous"></audio>
 
@@ -78,6 +92,7 @@ h1{font-size:clamp(1.8rem,5vw,3rem);font-weight:200;letter-spacing:-.02em;text-a
 </script>
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js'
+import { OBJLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160/examples/jsm/loaders/OBJLoader.js'
 
 // ── 3D Brain ──
 let scene, camera, renderer, brainGroup, brain3dReady = false
@@ -91,7 +106,7 @@ async function initBrain() {
 
   scene = new THREE.Scene()
   camera = new THREE.PerspectiveCamera(30, canvas.clientWidth / 400, 0.1, 1000)
-  camera.position.set(0, 20, 250)
+  camera.position.set(-200, 20, 0)
   camera.lookAt(0, 0, 0)
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.5))
@@ -101,87 +116,58 @@ async function initBrain() {
   const backLight = new THREE.DirectionalLight(0x8090b0, 0.3); backLight.position.set(-30, -20, -40); scene.add(backLight)
 
   // Load raw vertex positions from OBJ (point cloud, no faces)
-  const response = await fetch('static/brain_vertex_low.obj')
-  const text = await response.text()
-  const verts = []
-  for (const line of text.split('\n')) {
-    if (line.startsWith('v ')) {
-      const [, x, y, z] = line.split(/\s+/)
-      verts.push(parseFloat(x), parseFloat(y), parseFloat(z))
-    }
-  }
-  const obj = { vertexData: new Float32Array(verts), vertexCount: verts.length / 3 }
-  console.log('Parsed', obj.vertexCount, 'brain vertices')
+  const loader = new OBJLoader()
+  const obj = await new Promise((res, rej) => loader.load('static/brain-andre.obj', res, undefined, rej))
+  console.log('OBJ loaded:', obj.children.length, 'children')
 
   // obj is parsed data, not a THREE object — centering handled by geometry
 
-  const pointGeo = new THREE.BufferGeometry()
-  const positions = obj.vertexData
-  pointGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  // Center the model
+  // Center by averaging vertex positions
+  let cx=0,cy=0,cz=0,n=0; obj.traverse(c=>{if(c.isMesh){const p=c.geometry.attributes.position;for(let i=0;i<p.count;i++){cx+=p.getX(i);cy+=p.getY(i);cz+=p.getZ(i);n++}}}); cx/=n;cy/=n;cz/=n
+  const center = new THREE.Vector3(cx,cy,cz)
+  obj.position.sub(center)
   
-  // Per-vertex colors and sizes
-  const count = positions.length / 3
-  const colors = new Float32Array(count * 3)
-  const sizes = new Float32Array(count)
-  for (let i = 0; i < count; i++) {
-    colors[i*3] = 0.7; colors[i*3+1] = 0.65; colors[i*3+2] = 0.6
-    sizes[i] = 2.0
-  }
-  pointGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  pointGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-  
-  // Center the geometry
-  pointGeo.computeBoundingBox()
-  const center = pointGeo.boundingBox.getCenter(new THREE.Vector3())
-  pointGeo.translate(-center.x, -center.y, -center.z)
-  
-  const pointMat = new THREE.PointsMaterial({
-    size: 1.5,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.9,
-    sizeAttenuation: true
+  // Set up per-vertex coloring on each mesh child
+  obj.traverse(child => {
+    if (child.isMesh) {
+      const count = child.geometry.attributes.position.count
+      const colors = new Float32Array(count * 3)
+      for (let i = 0; i < count; i++) { colors[i*3]=0.75; colors[i*3+1]=0.7; colors[i*3+2]=0.65 }
+      child.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      child.material = new THREE.MeshPhongMaterial({
+        vertexColors: true, transparent: true, opacity: 0.88, shininess: 20, side: THREE.DoubleSide
+      })
+    }
   })
   
-  brainGroup = new THREE.Points(pointGeo, pointMat)
-  scene.add(brainGroup)
+  brainGroup = obj
+  scene.add(obj)
   brain3dReady = true
   renderer.render(scene, camera)
-  // Keep rendering to show the model
-  function keepRendering() { if(brain3dReady) { renderer.render(scene, camera); requestAnimationFrame(keepRendering) } }
-  keepRendering()
-  console.log('3D brain loaded')
+    console.log('3D brain loaded')
 }
 
 function updateBrain(brainState, time) {
   if (!brain3dReady || !brainGroup) return
-  brainGroup.rotation.y = (time || 0) * 0.0003
+  if (autoRotate) brainGroup.rotation.y += 0.003
 
-  const pos = brainGroup.geometry.attributes.position
-  const col = brainGroup.geometry.attributes.color
-  const count = pos.count
-
-  for (let i = 0; i < count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
-    let act = 0
-    if (z > 10) act = brainState.contemplation || 0
-    else if (z < -10) act = brainState.contemplation * 0.5 || 0
-    else if (Math.abs(x) > 20 && y < 10) act = brainState.auditory || 0
-    else if (y > 20) act = brainState.memory || 0
-    else act = brainState.emotion || 0
-
-    // Particle glow: base grey → hot orange with activation
-    col.setXYZ(i,
-      0.5 + act * 0.5,
-      0.45 - act * 0.2,
-      0.4 - act * 0.35
-    )
-  }
-  col.needsUpdate = true
-  
-  // Pulse the particle size with activation
-  const avgAct = ((brainState.contemplation||0) + (brainState.auditory||0) + (brainState.emotion||0)) / 3
-  brainGroup.material.size = 1.5 + avgAct * 2.0
+  brainGroup.traverse(child => {
+    if (!child.isMesh) return
+    const pos = child.geometry.attributes.position
+    const col = child.geometry.attributes.color
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
+      let act = 0
+      if (z > 10) act = brainState.contemplation || 0
+      else if (z < -10) act = brainState.contemplation * 0.5 || 0
+      else if (Math.abs(x) > 20 && y < 10) act = brainState.auditory || 0
+      else if (y > 20) act = brainState.memory || 0
+      else act = brainState.emotion || 0
+      col.setXYZ(i, 0.75 + act*0.25, 0.7 - act*0.4, 0.65 - act*0.5)
+    }
+    col.needsUpdate = true
+  })
 
   renderer.render(scene, camera)
 }
@@ -296,6 +282,43 @@ document.getElementById('scrubber').addEventListener('input', function() {
     }, performance.now())
   }
 })
+
+
+let autoRotate = false
+window._updateCam = function() {
+  if (!camera || !renderer) return
+  camera.position.set(
+    parseInt(document.getElementById('camX').value),
+    parseInt(document.getElementById('camY').value),
+    parseInt(document.getElementById('camZ').value)
+  )
+  camera.fov = parseInt(document.getElementById('camFov').value)
+  camera.updateProjectionMatrix()
+  camera.lookAt(0, 0, 0)
+  renderer.render(scene, camera)
+  document.getElementById('camXv').textContent = document.getElementById('camX').value
+  document.getElementById('camYv').textContent = document.getElementById('camY').value
+  document.getElementById('camZv').textContent = document.getElementById('camZ').value
+  document.getElementById('camFovV').textContent = document.getElementById('camFov').value
+}
+window._toggleRotate = function() {
+  autoRotate = document.getElementById('camRotate').checked
+  document.getElementById('rotLabel').textContent = autoRotate ? 'ON' : 'OFF'
+}
+window._updatePtSize = function() {
+  document.getElementById('ptSizeV').textContent = document.getElementById('ptSize').value
+}
+window._updateOpacity = function() {
+  const op = parseFloat(document.getElementById('brainOpacity').value)
+  document.getElementById('opV').textContent = op
+  if (brainGroup) brainGroup.traverse(c => { if(c.isMesh) c.material.opacity = op })
+  if (renderer) renderer.render(scene, camera)
+}
+window._updateBg = function() {
+  const bg = document.getElementById('bgColor').value
+  document.body.style.background = bg
+  if (renderer) { renderer.setClearColor(bg); renderer.render(scene, camera) }
+}
 
 // Init 3D brain on load
 initBrain().catch(e => console.error('Brain init failed:', e))
