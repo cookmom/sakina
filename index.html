@@ -75,6 +75,7 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 <div class="vis-wrapper">
   <div class="vis-tabs">
         <button class="vis-tab active" data-panel="panelFlatmap" onclick="switchTab('panelFlatmap')">Flatmap</button>
+    <button class="vis-tab" data-panel="panel3dBrain" onclick="switchTab('panel3dBrain')">3D Brain</button>
     <button class="vis-tab" data-panel="panelTribe"   onclick="switchTab('panelTribe')">Brain</button>
     <button class="vis-tab" data-panel="panelPattern" onclick="switchTab('panelPattern')">Pattern</button>
   </div>
@@ -88,6 +89,9 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
   </div>
 
   <!-- C: TRIBE v2 -->
+  <div class="vis-panel" id="panel3dBrain">
+    <canvas id="canvas3dBrain" style="width:100%;height:100%;display:block"></canvas>
+  </div>
   <div class="vis-panel" id="panelTribe">
     <div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
       <img id="brainFrame" src="frames/frame-000.png" style="max-width:100%;max-height:85%;object-fit:contain" alt="Brain activation">
@@ -133,6 +137,7 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 
 <script type="module">
 import { drawBrainProfiles } from './brain-profiles.js'
+import { initBrain3DReal, updateBrain3DReal, renderBrain3D, resizeBrain3D } from './brain3d-real.js'
 
 const TAU = Math.PI * 2
 
@@ -146,6 +151,10 @@ window.switchTab = function(id) {
   document.getElementById(id).classList.add('active')
   document.querySelector(`[data-panel="${id}"]`).classList.add('active')
   activeTab = id
+  if (id === 'panel3dBrain' && !window._brain3dRealReady) {
+    const cv = document.getElementById('canvas3dBrain')
+    if (cv) { initBrain3DReal(cv).then(() => { window._brain3dRealReady = true }) }
+  }
 
   if (id === 'panelTribe') {
     if (!window._brainMeshReady) {
@@ -458,6 +467,7 @@ function animate(t) {
 
   if (activeTab === 'panelPattern') brainToPattern(brain, t)
   if (activeTab === 'panelFlatmap') drawFlatmap(brain)
+  if (activeTab === 'panel3dBrain' && window._brain3dRealReady) updateBrain3DReal(brain, t)
   if (activeTab === 'panelTribe') {
     drawBrainProfiles(brain)
     // Sync frame to audio time
