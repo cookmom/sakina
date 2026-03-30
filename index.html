@@ -76,19 +76,16 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 <!-- ── Visualization area ──────────────────────────────── -->
 <div class="vis-wrapper">
   <div class="vis-tabs">
-    <button class="vis-tab" data-panel="panel3d"      onclick="switchTab('panel3d')">3D Brain</button>
-    <button class="vis-tab" data-panel="panelFlatmap" onclick="switchTab('panelFlatmap')">Flatmap</button>
-    <button class="vis-tab" data-panel="panelTribe"   onclick="switchTab('panelTribe')">Brain Map</button>
-    <button class="vis-tab active" data-panel="panelPattern" onclick="switchTab('panelPattern')">Pattern</button>
+        <button class="vis-tab active" data-panel="panelFlatmap" onclick="switchTab('panelFlatmap')">Flatmap</button>
+    <button class="vis-tab" data-panel="panelTribe"   onclick="switchTab('panelTribe')">Brain Mesh</button>
+    <button class="vis-tab" data-panel="panelPattern" onclick="switchTab('panelPattern')">Pattern</button>
   </div>
 
   <!-- A: 3D Brain -->
-  <div class="vis-panel" id="panel3d">
-    <canvas id="canvas3d"></canvas>
-  </div>
+  
 
   <!-- B: Flatmap -->
-  <div class="vis-panel" id="panelFlatmap">
+  <div class="vis-panel active" id="panelFlatmap">
     <svg id="flatmapSvg" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg"></svg>
   </div>
 
@@ -103,7 +100,7 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
   </div>
 
   <!-- D: Pattern (original) -->
-  <div class="vis-panel active" id="panelPattern">
+  <div class="vis-panel" id="panelPattern">
     <svg id="visSvg" viewBox="0 0 400 400"></svg>
   </div>
 </div>
@@ -131,13 +128,11 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 
 <script type="module">
 import { initBrainMesh, updateBrainMesh, renderBrainMesh } from './brain-mesh-viewer.js'
-import { initBrain3D, startBrain3D, stopBrain3D, updateBrainState3D, resize3D } from './brain3d.js'
 
 const TAU = Math.PI * 2
 
 // ── Tab system ────────────────────────────────────────────────
-let activeTab = 'panelPattern'
-let brain3dReady = false
+let activeTab = 'panelFlatmap'
 let tribeLoaded  = false
 
 window.switchTab = function(id) {
@@ -156,14 +151,6 @@ window.switchTab = function(id) {
     } else {
       updateBrainMesh(currentBrainState || {auditory:0.1,language:0.1,emotion:0.2,contemplation:0.5,memory:0.1}, performance.now())
     }
-  } else if (id === 'panel3d') {
-    if (!brain3dReady) {
-      const canvas = document.getElementById('canvas3d')
-      initBrain3D(canvas)
-      brain3dReady = true
-    }
-    startBrain3D()
-    updateBrainState3D(currentBrainState)
   } else {
     stopBrain3D()
   }
@@ -470,7 +457,6 @@ function animate(t) {
 
   if (activeTab === 'panelPattern') brainToPattern(brain, t)
   if (activeTab === 'panelFlatmap') drawFlatmap(brain)
-  if (activeTab === 'panel3d')      updateBrainState3D(brain)
 
   updateBrainBar(brain)
   animFrame = requestAnimationFrame(animate)

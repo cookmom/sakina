@@ -88,14 +88,30 @@ function resize() {
   camera.updateProjectionMatrix()
 }
 
-export function updateBrainMesh(brainState, time) {
+export function updateBrainMesh(brainState, time, rawVertices) {
   if (!brainMesh || !regionColors || !regionData) return
 
   // Color vertices based on brain state
   for (let i = 0; i < regionData.length; i++) {
+    // If we have raw TRIBE v2 vertex data, use it directly
+    // rawVertices has 205 values (every 100th vertex)
+    // Map vertex i to the nearest downsampled vertex
+    let activation = 0
+    if (rawVertices && rawVertices.length > 0) {
+      const stride = 100
+      const rawIdx = Math.floor(i / stride)
+      if (rawIdx < rawVertices.length) {
+        // Normalize from [-1.5, 1] to [0, 1]
+        activation = Math.max(0, Math.min(1, (rawVertices[rawIdx] + 1.5) / 2.5))
+      }
+    } else {
+      const region = regionData[i]
+      const stateKey = REGION_MAP[region]
+      activation = stateKey ? (brainState[stateKey] || 0) : 0
+    }
     const region = regionData[i]
     const stateKey = REGION_MAP[region]
-    const activation = stateKey ? (brainState[stateKey] || 0) : 0
+    // Skip the old region lookup — activation already set above
 
     // Lerp from base paper color to accent blue based on activation
     const r = BASE_COLOR.r + (ACCENT.r - BASE_COLOR.r) * activation
