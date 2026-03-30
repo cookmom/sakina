@@ -89,11 +89,14 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 
   <!-- C: TRIBE v2 -->
   <div class="vis-panel" id="panelTribe">
-    <div style="display:flex;gap:4px;width:100%;height:100%;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px">
-      <svg id="brainSide" viewBox="0 0 300 300" style="flex:1;min-width:180px;max-width:280px;height:auto"></svg>
-      <svg id="brainFront" viewBox="0 0 250 300" style="flex:1;min-width:150px;max-width:230px;height:auto"></svg>
-      <svg id="brainTop" viewBox="0 0 250 250" style="flex:1;min-width:150px;max-width:230px;height:auto"></svg>
+    <div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
+      <img id="brainFrame" src="frames/frame-000.png" style="max-width:100%;max-height:85%;object-fit:contain" alt="Brain activation">
+      <div style="display:flex;align-items:center;gap:12px;width:90%">
+        <input type="range" id="brainScrubber" min="0" max="46" value="0" style="flex:1;accent-color:var(--accent)">
+        <span id="brainFrameLabel" style="font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);min-width:60px">t=0 / 47</span>
+      </div>
     </div>
+  </div>
     <div style="position:absolute;bottom:8px;left:12px;font-size:.55rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)">
       TRIBE V2 · <span id="brainStepLabel">—</span>
     </div>
@@ -455,7 +458,22 @@ function animate(t) {
 
   if (activeTab === 'panelPattern') brainToPattern(brain, t)
   if (activeTab === 'panelFlatmap') drawFlatmap(brain)
-  if (activeTab === 'panelTribe') drawBrainProfiles(brain)
+  if (activeTab === 'panelTribe') {
+    drawBrainProfiles(brain)
+    // Sync frame to audio time
+    const audio = document.getElementById('audio')
+    if (audio && brainData && !audio.paused) {
+      const progress = audio.duration > 0 ? audio.currentTime / audio.duration : 0
+      const frame = Math.min(Math.floor(progress * brainData.timesteps), brainData.timesteps - 1)
+      const img = document.getElementById('brainFrame')
+      const newSrc = 'frames/frame-' + String(frame).padStart(3, '0') + '.png'
+      if (img && img.src !== newSrc) img.src = newSrc
+      const scrubber = document.getElementById('brainScrubber')
+      if (scrubber) { scrubber.max = brainData.timesteps - 1; scrubber.value = frame }
+      const label = document.getElementById('brainFrameLabel')
+      if (label) label.textContent = 't=' + frame + ' / ' + brainData.timesteps
+    }
+  }
 
   updateBrainBar(brain)
   animFrame = requestAnimationFrame(animate)
