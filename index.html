@@ -78,7 +78,7 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
   <div class="vis-tabs">
     <button class="vis-tab" data-panel="panel3d"      onclick="switchTab('panel3d')">3D Brain</button>
     <button class="vis-tab" data-panel="panelFlatmap" onclick="switchTab('panelFlatmap')">Flatmap</button>
-    <button class="vis-tab" data-panel="panelTribe"   onclick="switchTab('panelTribe')">TRIBE v2</button>
+    <button class="vis-tab" data-panel="panelTribe"   onclick="switchTab('panelTribe')">Brain Map</button>
     <button class="vis-tab active" data-panel="panelPattern" onclick="switchTab('panelPattern')">Pattern</button>
   </div>
 
@@ -94,9 +94,11 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 
   <!-- C: TRIBE v2 -->
   <div class="vis-panel" id="panelTribe">
-    <div class="tribe-wrap">
-      <iframe id="tribeFrame" src="about:blank" allow="fullscreen" title="Meta TRIBE v2"></iframe>
-      <div class="tribe-credit">Brain visualization powered by Meta TRIBE v2 · aidemos.atmeta.com/tribev2</div>
+    <canvas id="canvasBrainMap" style="width:100%;height:100%;display:block"></canvas>
+    <div style="position:absolute;bottom:8px;left:12px;font-size:.55rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)">
+      FSAVERAGE5 CORTICAL MESH · 20,484 VERTICES · TRIBE V2 FORMAT
+    </div>
+  </div>
     </div>
   </div>
 
@@ -128,6 +130,7 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 <audio id="audio" crossorigin="anonymous"></audio>
 
 <script type="module">
+import { initBrainMesh, updateBrainMesh, renderBrainMesh } from './brain-mesh-viewer.js'
 import { initBrain3D, startBrain3D, stopBrain3D, updateBrainState3D, resize3D } from './brain3d.js'
 
 const TAU = Math.PI * 2
@@ -144,7 +147,16 @@ window.switchTab = function(id) {
   document.querySelector(`[data-panel="${id}"]`).classList.add('active')
   activeTab = id
 
-  if (id === 'panel3d') {
+  if (id === 'panelTribe') {
+    if (!window._brainMeshReady) {
+      const canvas = document.getElementById('canvasBrainMap')
+      if (canvas) {
+        initBrainMesh(canvas).then(() => { window._brainMeshReady = true; renderBrainMesh() })
+      }
+    } else {
+      updateBrainMesh(currentBrainState || {auditory:0.1,language:0.1,emotion:0.2,contemplation:0.5,memory:0.1}, performance.now())
+    }
+  } else if (id === 'panel3d') {
     if (!brain3dReady) {
       const canvas = document.getElementById('canvas3d')
       initBrain3D(canvas)
@@ -378,6 +390,7 @@ function animate(t) {
   if (activeTab === 'panel3d')      updateBrainState3D(brain)
 
   updateBrainBar(brain)
+  if (window._brainMeshReady && activeTab === 'panelTribe') updateBrainMesh(brain, t)
   animFrame = requestAnimationFrame(animate)
 }
 
@@ -411,6 +424,7 @@ window.togglePlay = async function() {
   isPlaying = true
   btn.textContent = '⏸ Pause'
   document.getElementById('status').textContent = 'Listening — neural response simulated (Phase 1)'
+  if (window._brainMeshReady && activeTab === 'panelTribe') updateBrainMesh(brain, t)
   animFrame = requestAnimationFrame(animate)
 }
 
