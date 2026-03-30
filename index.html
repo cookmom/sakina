@@ -190,6 +190,61 @@ async function loadSurah(num) {
   return { audioUrl, verses: versesData.verses || [] }
 }
 
+
+// ── Real TRIBE v2 Brain Data ──
+let brainData = null
+let brainDataLoading = false
+
+async function loadBrainData(surahNum) {
+  brainDataLoading = true
+  try {
+    const res = await fetch('brain-data/surah-' + surahNum + '.json')
+    if (res.ok) {
+      brainData = await res.json()
+      document.getElementById('status').textContent = 
+        'TRIBE v2 brain data loaded — ' + brainData.timesteps + ' timesteps × ' + brainData.vertices + ' vertices (real predictions)'
+      console.log('Brain data:', brainData.name, brainData.timesteps, '×', brainData.vertices)
+    } else {
+      brainData = null
+      console.log('No brain data for surah', surahNum)
+    }
+  } catch(e) {
+    brainData = null
+    console.log('Brain data load error:', e)
+  }
+  brainDataLoading = false
+}
+
+function getBrainStateFromTribe(audioTime, duration) {
+  if (!brainData || !brainData.predictions) return null
+  // Map audio time to brain data timestep
+  const progress = duration > 0 ? audioTime / duration : 0
+  const step = Math.min(Math.floor(progress * brainData.timesteps), brainData.timesteps - 1)
+  const vertices = brainData.predictions[step]
+  if (!vertices) return null
+  
+  // Map vertex activations to brain regions
+  // With 205 downsampled vertices, roughly:
+  // 0-40: frontal (contemplation)
+  // 40-80: temporal (auditory/language)  
+  // 80-120: parietal (memory)
+  // 120-160: occipital
+  // 160-205: limbic/deep (emotion)
+  const avg = (arr) => arr.reduce((a,b) => a+b, 0) / arr.length
+  const norm = (v) => Math.max(0, Math.min(1, (v + 1) / 2)) // -1..1 → 0..1
+  
+  return {
+    auditory: norm(avg(vertices.slice(40, 80))),
+    language: norm(avg(vertices.slice(50, 90))),
+    emotion: norm(avg(vertices.slice(160, 205))),
+    contemplation: norm(avg(vertices.slice(0, 40))),
+    memory: norm(avg(vertices.slice(80, 120))),
+    _step: step,
+    _total: brainData.timesteps,
+    _raw: vertices
+  }
+}
+
 // ── Audio Analysis ────────────────────────────────────────────
 let audioCtx, analyser, source, dataArray
 let isPlaying = false
@@ -402,8 +457,15 @@ function updateBrainBar(brain) {
 let animFrame
 function animate(t) {
   if (!isPlaying) return
-  const features = getAudioFeatures()
-  const brain    = audiaToBrainState(features)
+  const audio = document.getElementById('audio')
+  const tribeBrain = getBrainStateFromTribe(audio.currentTime, audio.duration)
+  let brain
+  if (tribeBrain) {
+    brain = tribeBrain
+  } else {
+    const features = getAudioFeatures()
+    brain = audiaToBrainState(features)
+  }
   currentBrainState = brain
 
   if (activeTab === 'panelPattern') brainToPattern(brain, t)
@@ -433,6 +495,7 @@ window.togglePlay = async function() {
   if (!currentSurah || currentSurah.num !== surahNum) {
     const data = await loadSurah(surahNum)
     currentSurah = { num: surahNum, ...data }
+    loadBrainData(surahNum)
     audioEl.src  = data.audioUrl
     if (data.verses.length > 0) {
       document.getElementById('verseDisplay').textContent = data.verses[0].text_uthmani
