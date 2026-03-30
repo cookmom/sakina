@@ -208,9 +208,30 @@ function setupAudio(audioEl) {
   analyser.connect(audioCtx.destination)
 }
 
+
+// Fallback when CORS blocks Web Audio analyser
+function getFallbackFeatures() {
+  const audio = document.getElementById('audio')
+  if (!audio || audio.paused) return { energy: 0, bass: 0, mid: 0, high: 0, spectralCentroid: 0 }
+  const t = audio.currentTime
+  // Simulate brain-like oscillations based on time
+  const breath = (Math.sin(t * 0.5) + 1) / 2  // slow breathing rhythm
+  const pulse = (Math.sin(t * 2.3) + 1) / 2    // heartbeat-ish
+  const recit = (Math.sin(t * 1.1) * Math.sin(t * 0.7) + 1) / 2  // recitation rhythm
+  return {
+    energy: 0.3 + recit * 0.4,
+    bass: 0.2 + breath * 0.5,
+    mid: 0.3 + pulse * 0.4,
+    high: 0.1 + recit * 0.3,
+    spectralCentroid: 0.3 + breath * 0.3
+  }
+}
 function getAudioFeatures() {
-  if (!analyser) return { energy: 0, bass: 0, mid: 0, high: 0, spectralCentroid: 0 }
+  if (!analyser) return getFallbackFeatures()
   analyser.getByteFrequencyData(dataArray)
+  // Check if we're getting actual data (CORS might block it)
+  const hasData = dataArray.some(v => v > 0)
+  if (!hasData) return getFallbackFeatures()
   const len = dataArray.length
   let sum = 0, bassSum = 0, midSum = 0, highSum = 0, weightedSum = 0
   for (let i = 0; i < len; i++) {
@@ -390,7 +411,6 @@ function animate(t) {
   if (activeTab === 'panel3d')      updateBrainState3D(brain)
 
   updateBrainBar(brain)
-  if (window._brainMeshReady && activeTab === 'panelTribe') updateBrainMesh(brain, t)
   animFrame = requestAnimationFrame(animate)
 }
 
@@ -424,7 +444,6 @@ window.togglePlay = async function() {
   isPlaying = true
   btn.textContent = '⏸ Pause'
   document.getElementById('status').textContent = 'Listening — neural response simulated (Phase 1)'
-  if (window._brainMeshReady && activeTab === 'panelTribe') updateBrainMesh(brain, t)
   animFrame = requestAnimationFrame(animate)
 }
 
