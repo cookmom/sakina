@@ -75,7 +75,7 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 <div class="vis-wrapper">
   <div class="vis-tabs">
         <button class="vis-tab active" data-panel="panelFlatmap" onclick="switchTab('panelFlatmap')">Flatmap</button>
-    <button class="vis-tab" data-panel="panelTribe"   onclick="switchTab('panelTribe')">Brain Mesh</button>
+    <button class="vis-tab" data-panel="panelTribe"   onclick="switchTab('panelTribe')">Brain</button>
     <button class="vis-tab" data-panel="panelPattern" onclick="switchTab('panelPattern')">Pattern</button>
   </div>
 
@@ -89,9 +89,13 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 
   <!-- C: TRIBE v2 -->
   <div class="vis-panel" id="panelTribe">
-    <canvas id="canvasBrainMap" style="width:100%;height:100%;display:block"></canvas>
+    <div style="display:flex;gap:4px;width:100%;height:100%;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px">
+      <svg id="brainSide" viewBox="0 0 300 300" style="flex:1;min-width:180px;max-width:280px;height:auto"></svg>
+      <svg id="brainFront" viewBox="0 0 250 300" style="flex:1;min-width:150px;max-width:230px;height:auto"></svg>
+      <svg id="brainTop" viewBox="0 0 250 250" style="flex:1;min-width:150px;max-width:230px;height:auto"></svg>
+    </div>
     <div style="position:absolute;bottom:8px;left:12px;font-size:.55rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)">
-      FSAVERAGE5 CORTICAL MESH · 20,484 VERTICES · TRIBE V2 FORMAT
+      TRIBE V2 · <span id="brainStepLabel">—</span>
     </div>
   </div>
     </div>
@@ -125,7 +129,7 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 <audio id="audio" crossorigin="anonymous"></audio>
 
 <script type="module">
-import { initBrainMesh, updateBrainMesh, renderBrainMesh } from './brain-mesh-viewer.js'
+import { drawBrainProfiles } from './brain-profiles.js'
 
 const TAU = Math.PI * 2
 
@@ -451,6 +455,7 @@ function animate(t) {
 
   if (activeTab === 'panelPattern') brainToPattern(brain, t)
   if (activeTab === 'panelFlatmap') drawFlatmap(brain)
+  if (activeTab === 'panelTribe') drawBrainProfiles(brain)
 
   updateBrainBar(brain)
   animFrame = requestAnimationFrame(animate)
