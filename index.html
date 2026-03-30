@@ -78,7 +78,6 @@ h1{font-size:clamp(1.8rem,5vw,3rem);font-weight:200;letter-spacing:-.02em;text-a
 </script>
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js'
-import { OBJLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160/examples/jsm/loaders/OBJLoader.js'
 
 // ── 3D Brain ──
 let scene, camera, renderer, brainGroup, brain3dReady = false
@@ -101,26 +100,51 @@ async function initBrain() {
   scene.add(dir)
   const backLight = new THREE.DirectionalLight(0x8090b0, 0.3); backLight.position.set(-30, -20, -40); scene.add(backLight)
 
-  const loader = new OBJLoader()
-  const obj = await new Promise((resolve, reject) => {
-    loader.load('static/BrainUVs.obj', resolve, undefined, reject)
-  })
-
-  brainGroup = obj
-  const box = new THREE.Box3().setFromObject(obj)
-  obj.position.sub(box.getCenter(new THREE.Vector3()))
-
-  obj.traverse(child => {
-    if (child.isMesh) {
-      const count = child.geometry.attributes.position.count
-      const colors = new Float32Array(count * 3)
-      for (let i = 0; i < count; i++) { colors[i*3]=0.85; colors[i*3+1]=0.82; colors[i*3+2]=0.77 }
-      child.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-      child.material = new THREE.MeshPhongMaterial({ vertexColors: true, transparent: true, opacity: 0.9, shininess: 25 })
+  // Load raw vertex positions from OBJ (point cloud, no faces)
+  const response = await fetch('static/brain_vertex_low.obj')
+  const text = await response.text()
+  const verts = []
+  for (const line of text.split('\n')) {
+    if (line.startsWith('v ')) {
+      const [, x, y, z] = line.split(/\s+/)
+      verts.push(parseFloat(x), parseFloat(y), parseFloat(z))
     }
-  })
+  }
+  const obj = { vertexData: new Float32Array(verts), vertexCount: verts.length / 3 }
+  console.log('Parsed', obj.vertexCount, 'brain vertices')
 
-  scene.add(obj)
+  // obj is parsed data, not a THREE object — centering handled by geometry
+
+  const pointGeo = new THREE.BufferGeometry()
+  const positions = obj.vertexData
+  pointGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  
+  // Per-vertex colors and sizes
+  const count = positions.length / 3
+  const colors = new Float32Array(count * 3)
+  const sizes = new Float32Array(count)
+  for (let i = 0; i < count; i++) {
+    colors[i*3] = 0.7; colors[i*3+1] = 0.65; colors[i*3+2] = 0.6
+    sizes[i] = 2.0
+  }
+  pointGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  pointGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+  
+  // Center the geometry
+  pointGeo.computeBoundingBox()
+  const center = pointGeo.boundingBox.getCenter(new THREE.Vector3())
+  pointGeo.translate(-center.x, -center.y, -center.z)
+  
+  const pointMat = new THREE.PointsMaterial({
+    size: 1.5,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+    sizeAttenuation: true
+  })
+  
+  brainGroup = new THREE.Points(pointGeo, pointMat)
+  scene.add(brainGroup)
   brain3dReady = true
   renderer.render(scene, camera)
   // Keep rendering to show the model
@@ -133,29 +157,31 @@ function updateBrain(brainState, time) {
   if (!brain3dReady || !brainGroup) return
   brainGroup.rotation.y = (time || 0) * 0.0003
 
-  brainGroup.traverse(child => {
-    if (!child.isMesh) return
-    const pos = child.geometry.attributes.position
-    const col = child.geometry.attributes.color
+  const pos = brainGroup.geometry.attributes.position
+  const col = brainGroup.geometry.attributes.color
+  const count = pos.count
 
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
-      let act = 0
-      if (z > 10) act = brainState.contemplation || 0
-      else if (z < -10) act = brainState.contemplation * 0.5 || 0
-      else if (Math.abs(x) > 20 && y < 10) act = brainState.auditory || 0
-      else if (y > 20) act = brainState.memory || 0
-      else act = brainState.emotion || 0
+  for (let i = 0; i < count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
+    let act = 0
+    if (z > 10) act = brainState.contemplation || 0
+    else if (z < -10) act = brainState.contemplation * 0.5 || 0
+    else if (Math.abs(x) > 20 && y < 10) act = brainState.auditory || 0
+    else if (y > 20) act = brainState.memory || 0
+    else act = brainState.emotion || 0
 
-      // Base grey → hot orange/red with activation
-      col.setXYZ(i,
-        0.85 + act * 0.15,
-        0.82 - act * 0.5,
-        0.77 - act * 0.6
-      )
-    }
-    col.needsUpdate = true
-  })
+    // Particle glow: base grey → hot orange with activation
+    col.setXYZ(i,
+      0.5 + act * 0.5,
+      0.45 - act * 0.2,
+      0.4 - act * 0.35
+    )
+  }
+  col.needsUpdate = true
+  
+  // Pulse the particle size with activation
+  const avgAct = ((brainState.contemplation||0) + (brainState.auditory||0) + (brainState.emotion||0)) / 3
+  brainGroup.material.size = 1.5 + avgAct * 2.0
 
   renderer.render(scene, camera)
 }
