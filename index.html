@@ -15,8 +15,35 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 .subtitle{font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:3rem;text-align:center}
 .player{width:100%;max-width:600px;margin:2rem 0}
 .surah-select{width:100%;padding:.8rem 1rem;font-family:var(--font);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;background:rgba(44,62,107,.06);border:1px solid rgba(44,62,107,.15);color:var(--fg);cursor:pointer;appearance:none;-webkit-appearance:none}
-.vis-container{width:100%;max-width:600px;aspect-ratio:1;position:relative;margin:2rem 0}
-.vis-container svg{width:100%;height:100%}
+
+/* ── Vis tabs ──────────────────────────────────────────── */
+.vis-wrapper{width:100%;max-width:600px;margin:2rem 0}
+.vis-tabs{display:flex;gap:0;margin-bottom:0;border-bottom:1px solid rgba(44,62,107,.14)}
+.vis-tab{flex:1;padding:.5rem .4rem;font-family:var(--font);font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;background:transparent;border:1px solid rgba(44,62,107,.12);border-bottom:none;color:var(--dim);cursor:pointer;transition:all .2s;text-align:center}
+.vis-tab:first-child{border-left:1px solid rgba(44,62,107,.12)}
+.vis-tab+.vis-tab{border-left:none}
+.vis-tab.active{background:var(--accent);color:#f5f0e6;border-color:var(--accent)}
+.vis-tab:hover:not(.active){background:rgba(44,62,107,.06);color:var(--fg)}
+
+/* Shared panel */
+.vis-panel{display:none;width:100%;aspect-ratio:1;position:relative;background:rgba(44,62,107,.02);border:1px solid rgba(44,62,107,.08);border-top:none}
+.vis-panel.active{display:block}
+
+/* Pattern panel keeps original SVG */
+.vis-panel svg{width:100%;height:100%}
+
+/* 3D canvas */
+#canvas3d{display:block;width:100%;height:100%}
+
+/* Flatmap panel */
+#panelFlatmap svg{width:100%;height:100%}
+
+/* TRIBE panel */
+.tribe-wrap{width:100%;height:100%;display:flex;flex-direction:column}
+.tribe-wrap iframe{flex:1;border:none;width:100%}
+.tribe-credit{font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);text-align:center;padding:.5rem;border-top:1px solid rgba(44,62,107,.1);background:rgba(44,62,107,.03)}
+
+/* ── brain bar ────────────────────────────────────────── */
 .brain-bar{display:flex;gap:4px;justify-content:center;margin:1rem 0;flex-wrap:wrap}
 .brain-region{font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;padding:.3rem .6rem;border:1px solid rgba(44,62,107,.12);color:var(--dim);transition:all .3s}
 .brain-region.active{background:var(--accent);color:#f5f0e6;border-color:var(--accent)}
@@ -46,8 +73,37 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
   </select>
 </div>
 
-<div class="vis-container">
-  <svg id="visSvg" viewBox="0 0 400 400"></svg>
+<!-- ── Visualization area ──────────────────────────────── -->
+<div class="vis-wrapper">
+  <div class="vis-tabs">
+    <button class="vis-tab" data-panel="panel3d"      onclick="switchTab('panel3d')">3D Brain</button>
+    <button class="vis-tab" data-panel="panelFlatmap" onclick="switchTab('panelFlatmap')">Flatmap</button>
+    <button class="vis-tab" data-panel="panelTribe"   onclick="switchTab('panelTribe')">TRIBE v2</button>
+    <button class="vis-tab active" data-panel="panelPattern" onclick="switchTab('panelPattern')">Pattern</button>
+  </div>
+
+  <!-- A: 3D Brain -->
+  <div class="vis-panel" id="panel3d">
+    <canvas id="canvas3d"></canvas>
+  </div>
+
+  <!-- B: Flatmap -->
+  <div class="vis-panel" id="panelFlatmap">
+    <svg id="flatmapSvg" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <!-- C: TRIBE v2 -->
+  <div class="vis-panel" id="panelTribe">
+    <div class="tribe-wrap">
+      <iframe id="tribeFrame" src="about:blank" allow="fullscreen" title="Meta TRIBE v2"></iframe>
+      <div class="tribe-credit">Brain visualization powered by Meta TRIBE v2 · aidemos.atmeta.com/tribev2</div>
+    </div>
+  </div>
+
+  <!-- D: Pattern (original) -->
+  <div class="vis-panel active" id="panelPattern">
+    <svg id="visSvg" viewBox="0 0 400 400"></svg>
+  </div>
 </div>
 
 <div class="verse-display" id="verseDisplay">
@@ -72,28 +128,57 @@ h1{font-size:clamp(2rem,6vw,3.5rem);font-weight:200;letter-spacing:-.02em;text-a
 <audio id="audio" crossorigin="anonymous"></audio>
 
 <script type="module">
+import { initBrain3D, startBrain3D, stopBrain3D, updateBrainState3D, resize3D } from './brain3d.js'
+
 const TAU = Math.PI * 2
 
-// ── Quran.com API ──
-async function loadSurah(num) {
-  document.getElementById('status').textContent = 'Loading surah ' + num + '...'
-  
-  // Get audio
-  const audioRes = await fetch('https://api.quran.com/api/v4/chapter_recitations/7/' + num)
-  const audioData = await audioRes.json()
-  const audioUrl = audioData.audio_file?.audio_url
-  
-  // Get verses
-  const versesRes = await fetch('https://api.quran.com/api/v4/quran/verses/uthmani?chapter_number=' + num)
-  const versesData = await versesRes.json()
-  
-  return {
-    audioUrl,
-    verses: versesData.verses || []
+// ── Tab system ────────────────────────────────────────────────
+let activeTab = 'panelPattern'
+let brain3dReady = false
+let tribeLoaded  = false
+
+window.switchTab = function(id) {
+  document.querySelectorAll('.vis-panel').forEach(p => p.classList.remove('active'))
+  document.querySelectorAll('.vis-tab').forEach(t => t.classList.remove('active'))
+  document.getElementById(id).classList.add('active')
+  document.querySelector(`[data-panel="${id}"]`).classList.add('active')
+  activeTab = id
+
+  if (id === 'panel3d') {
+    if (!brain3dReady) {
+      const canvas = document.getElementById('canvas3d')
+      initBrain3D(canvas)
+      brain3dReady = true
+    }
+    startBrain3D()
+    updateBrainState3D(currentBrainState)
+  } else {
+    stopBrain3D()
+  }
+
+  if (id === 'panelTribe' && !tribeLoaded) {
+    document.getElementById('tribeFrame').src = 'https://aidemos.atmeta.com/tribev2/'
+    tribeLoaded = true
   }
 }
 
-// ── Audio Analysis (Phase 1 proxy for TRIBE v2) ──
+// Resize 3D canvas when window resizes
+window.addEventListener('resize', () => {
+  if (brain3dReady) resize3D(document.getElementById('panel3d'))
+})
+
+// ── Quran.com API ─────────────────────────────────────────────
+async function loadSurah(num) {
+  document.getElementById('status').textContent = 'Loading surah ' + num + '...'
+  const audioRes = await fetch('https://api.quran.com/api/v4/chapter_recitations/7/' + num)
+  const audioData = await audioRes.json()
+  const audioUrl = audioData.audio_file?.audio_url
+  const versesRes = await fetch('https://api.quran.com/api/v4/quran/verses/uthmani?chapter_number=' + num)
+  const versesData = await versesRes.json()
+  return { audioUrl, verses: versesData.verses || [] }
+}
+
+// ── Audio Analysis ────────────────────────────────────────────
 let audioCtx, analyser, source, dataArray
 let isPlaying = false
 let currentSurah = null
@@ -114,10 +199,8 @@ function setupAudio(audioEl) {
 function getAudioFeatures() {
   if (!analyser) return { energy: 0, bass: 0, mid: 0, high: 0, spectralCentroid: 0 }
   analyser.getByteFrequencyData(dataArray)
-  
   const len = dataArray.length
   let sum = 0, bassSum = 0, midSum = 0, highSum = 0, weightedSum = 0
-  
   for (let i = 0; i < len; i++) {
     const v = dataArray[i] / 255
     sum += v
@@ -126,99 +209,183 @@ function getAudioFeatures() {
     else highSum += v
     weightedSum += v * i
   }
-  
   const energy = sum / len
   return {
     energy,
-    bass: bassSum / (len * 0.15),
-    mid: midSum / (len * 0.35),
-    high: highSum / (len * 0.5),
+    bass:             bassSum / (len * 0.15),
+    mid:              midSum  / (len * 0.35),
+    high:             highSum / (len * 0.5),
     spectralCentroid: sum > 0 ? weightedSum / sum / len : 0
   }
 }
 
-// ── Neural Proxy: map audio features to brain regions ──
-// Phase 1: simulate what TRIBE v2 would predict
+// ── Neural proxy ──────────────────────────────────────────────
 function audiaToBrainState(features) {
   return {
-    auditory: Math.min(1, features.energy * 2.5),
-    language: Math.min(1, features.mid * 2),
-    emotion: Math.min(1, features.bass * 1.8 + features.energy * 0.5),
+    auditory:      Math.min(1, features.energy * 2.5),
+    language:      Math.min(1, features.mid    * 2),
+    emotion:       Math.min(1, features.bass   * 1.8 + features.energy * 0.5),
     contemplation: Math.min(1, (1 - features.energy) * 0.8 + features.spectralCentroid * 0.5),
-    memory: Math.min(1, features.mid * 0.6 + features.bass * 0.4)
+    memory:        Math.min(1, features.mid    * 0.6 + features.bass * 0.4)
   }
 }
 
-// ── Pattern Generation (tenfold integration) ──
+// Shared brain state — all visualisations read from this
+let currentBrainState = { auditory: 0.1, language: 0.1, emotion: 0.2, contemplation: 0.6, memory: 0.1 }
+
+// ── Pattern Generation (original) ────────────────────────────
 function brainToPattern(brain, t) {
   const svg = document.getElementById('visSvg')
   const W = 400, cx = W/2, cy = W/2
-  
-  // Map brain state to pattern parameters
-  const fold = Math.round(4 + brain.contemplation * 8) // 4-12 fold
-  const density = 0.3 + brain.auditory * 0.7
-  const scale = 60 + brain.emotion * 60
+  const fold     = Math.round(4 + brain.contemplation * 8)
+  const density  = 0.3 + brain.auditory * 0.7
+  const scale    = 60 + brain.emotion * 60
   const rotation = t * 0.001 * (1 + brain.language)
-  
   let html = ''
-  
-  // Generate star pattern
   const R = scale * density
   const n = fold * 2
-  
   for (let ring = 0; ring < 3; ring++) {
-    const ringR = R * (1 + ring * 0.6)
+    const ringR     = R * (1 + ring * 0.6)
     const ringAlpha = (0.7 - ring * 0.2) * density
-    
-    // Star at center
     for (let i = 0; i < n; i++) {
-      const a1 = rotation + (i / n) * TAU
+      const a1   = rotation + (i / n) * TAU
       const skip = Math.floor(n / 3)
-      const a2 = rotation + (((i + skip) % n) / n) * TAU
-      
+      const a2   = rotation + (((i + skip) % n) / n) * TAU
       html += `<line x1="${(cx + Math.cos(a1)*ringR).toFixed(1)}" y1="${(cy + Math.sin(a1)*ringR).toFixed(1)}" x2="${(cx + Math.cos(a2)*ringR).toFixed(1)}" y2="${(cy + Math.sin(a2)*ringR).toFixed(1)}" stroke="var(--accent)" stroke-width="${(0.5 + brain.emotion).toFixed(1)}" opacity="${ringAlpha.toFixed(2)}"/>`
     }
-    
-    // Concentric circle
     html += `<circle cx="${cx}" cy="${cy}" r="${ringR.toFixed(1)}" fill="none" stroke="rgba(44,62,107,${(0.1 + brain.contemplation * 0.15).toFixed(2)})" stroke-width="0.5"/>`
   }
-  
-  // Breathing pulse circle
   const pulseR = R * (0.3 + Math.sin(t * 0.003) * 0.1 * brain.auditory)
   html += `<circle cx="${cx}" cy="${cy}" r="${pulseR.toFixed(1)}" fill="none" stroke="var(--accent)" stroke-width="0.8" opacity="${(0.2 + brain.emotion * 0.3).toFixed(2)}"/>`
-  
   svg.innerHTML = html
 }
 
-// ── Brain bar UI ──
+// ── Flatmap SVG ───────────────────────────────────────────────
+// Region shapes: [cx, cy, rx, ry, label, labelDx, labelDy, key]
+const FLAT_REGIONS = [
+  // Frontal lobe — top / anterior
+  { key: 'contemplation', cx: 200, cy: 110, rx: 80, ry: 58,  label: 'Frontal',  lx: 200, ly: 86  },
+  // Temporal L — left
+  { key: 'auditory',      cx: 82,  cy: 220, rx: 50, ry: 38,  label: 'Temporal L', lx: 50,  ly: 214 },
+  // Temporal R / Wernicke — right
+  { key: 'language',      cx: 318, cy: 220, rx: 50, ry: 38,  label: 'Temporal R', lx: 350, ly: 214 },
+  // Limbic — central/inferior
+  { key: 'emotion',       cx: 200, cy: 255, rx: 52, ry: 36,  label: 'Limbic',   lx: 200, ly: 250 },
+  // Parietal — posterior
+  { key: 'memory',        cx: 200, cy: 310, rx: 70, ry: 46,  label: 'Parietal', lx: 200, ly: 342 },
+]
+
+// Brain outline path (top-down stylised cortical view — rough ellipse with
+// slight anterior narrowing and occipital pinch)
+const BRAIN_OUTLINE = `
+  M200,42
+  C255,42 320,62 355,110
+  C388,155 388,198 370,240
+  C352,282 320,310 290,330
+  C268,348 238,360 200,360
+  C162,360 132,348 110,330
+  C80,310 48,282 30,240
+  C12,198 12,155 45,110
+  C80,62 145,42 200,42Z
+`
+
+// Sulcus lines (few stylised fissures)
+const SULCI = [
+  // Central sulcus
+  `M130,140 C160,170 200,175 270,140`,
+  // Lateral (Sylvian) fissure L
+  `M68,195 C95,195 110,220 120,248`,
+  // Lateral (Sylvian) fissure R
+  `M332,195 C305,195 290,220 280,248`,
+  // Longitudinal midline
+  `M200,42 C200,90 200,170 200,360`,
+]
+
+function drawFlatmap(brain) {
+  const svg = document.getElementById('flatmapSvg')
+  let html = ''
+
+  // Background fill
+  html += `<rect width="400" height="400" fill="#f5f0e6"/>`
+
+  // Region fills (under outline)
+  FLAT_REGIONS.forEach(r => {
+    const v = Math.max(0, Math.min(1, brain[r.key] ?? 0))
+    const a = (v * 0.55 + 0.04).toFixed(3)
+    html += `<ellipse cx="${r.cx}" cy="${r.cy}" rx="${r.rx}" ry="${r.ry}" fill="rgba(44,62,107,${a})" />`
+  })
+
+  // Brain outline
+  html += `<path d="${BRAIN_OUTLINE}" fill="none" stroke="rgba(44,62,107,0.45)" stroke-width="1.2"/>`
+
+  // Sulci
+  SULCI.forEach(d => {
+    html += `<path d="${d}" fill="none" stroke="rgba(44,62,107,0.18)" stroke-width="0.7"/>`
+  })
+
+  // Region labels + activation value
+  FLAT_REGIONS.forEach(r => {
+    const v  = Math.max(0, Math.min(1, brain[r.key] ?? 0))
+    const pct = Math.round(v * 100)
+    const bright = v > 0.35
+    const tc = bright ? '#f5f0e6' : 'rgba(44,62,107,0.65)'
+
+    html += `<text x="${r.lx}" y="${r.ly}" text-anchor="middle" font-family="Inter,sans-serif" font-size="7.5" font-weight="300" letter-spacing="1.4" fill="${tc}" text-transform="uppercase">${r.label.toUpperCase()}</text>`
+    html += `<text x="${r.lx}" y="${r.ly + 11}" text-anchor="middle" font-family="Inter,sans-serif" font-size="8" font-weight="300" fill="${tc}" opacity="0.8">${pct}%</text>`
+  })
+
+  // Annotation lines + formula block (architectural style)
+  const legendX = 10, legendY = 372
+  html += `<text x="${legendX}" y="${legendY}" font-family="Inter,sans-serif" font-size="6.5" font-weight="300" letter-spacing="0.9" fill="rgba(44,62,107,0.4)">ACTIVATION  f(x) = Σ ω·FFT → [0,1]</text>`
+
+  // Small tick marks for each region on the right edge
+  FLAT_REGIONS.forEach((r, i) => {
+    const v   = Math.max(0, Math.min(1, brain[r.key] ?? 0))
+    const pct = Math.round(v * 100)
+    const ty  = 62 + i * 18
+    const barW = v * 44
+    html += `<text x="369" y="${ty}" font-family="Inter,sans-serif" font-size="5.8" font-weight="300" letter-spacing="0.8" fill="rgba(44,62,107,0.45)">${r.label.split(' ')[0].toUpperCase()}</text>`
+    html += `<rect x="369" y="${ty + 2}" width="44" height="2.5" fill="rgba(44,62,107,0.1)"/>`
+    html += `<rect x="369" y="${ty + 2}" width="${barW.toFixed(1)}" height="2.5" fill="rgba(44,62,107,0.55)"/>`
+  })
+
+  // Title
+  html += `<text x="200" y="20" text-anchor="middle" font-family="Inter,sans-serif" font-size="7" font-weight="300" letter-spacing="2" fill="rgba(44,62,107,0.38)">CORTICAL ACTIVATION MAP</text>`
+
+  svg.innerHTML = html
+}
+
+// ── Brain bar UI ──────────────────────────────────────────────
 function updateBrainBar(brain) {
   document.querySelectorAll('.brain-region').forEach(el => {
     const region = el.dataset.region
-    const val = brain[region] || 0
+    const val    = brain[region] || 0
     el.classList.toggle('active', val > 0.3)
     el.style.opacity = 0.3 + val * 0.7
   })
 }
 
-// ── Animation loop ──
+// ── Animation loop ────────────────────────────────────────────
 let animFrame
 function animate(t) {
   if (!isPlaying) return
-  
   const features = getAudioFeatures()
-  const brain = audiaToBrainState(features)
-  
-  brainToPattern(brain, t)
+  const brain    = audiaToBrainState(features)
+  currentBrainState = brain
+
+  if (activeTab === 'panelPattern') brainToPattern(brain, t)
+  if (activeTab === 'panelFlatmap') drawFlatmap(brain)
+  if (activeTab === 'panel3d')      updateBrainState3D(brain)
+
   updateBrainBar(brain)
-  
   animFrame = requestAnimationFrame(animate)
 }
 
-// ── Controls ──
+// ── Controls ──────────────────────────────────────────────────
 window.togglePlay = async function() {
   const audioEl = document.getElementById('audio')
-  const btn = document.getElementById('btnPlay')
-  
+  const btn     = document.getElementById('btnPlay')
+
   if (isPlaying) {
     audioEl.pause()
     isPlaying = false
@@ -227,22 +394,19 @@ window.togglePlay = async function() {
     document.getElementById('status').textContent = 'Paused'
     return
   }
-  
+
   const surahNum = document.getElementById('surahSelect').value
-  
+
   if (!currentSurah || currentSurah.num !== surahNum) {
     const data = await loadSurah(surahNum)
     currentSurah = { num: surahNum, ...data }
-    audioEl.src = data.audioUrl
-    
-    // Display first verse
+    audioEl.src  = data.audioUrl
     if (data.verses.length > 0) {
       document.getElementById('verseDisplay').textContent = data.verses[0].text_uthmani
     }
-    
     setupAudio(audioEl)
   }
-  
+
   await audioEl.play()
   isPlaying = true
   btn.textContent = '⏸ Pause'
@@ -251,27 +415,24 @@ window.togglePlay = async function() {
 }
 
 window.exportPattern = function() {
-  const svg = document.getElementById('visSvg')
+  const svg  = document.getElementById('visSvg')
   const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = URL.createObjectURL(blob)
   a.download = 'sakina-pattern.svg'
   a.click()
 }
 
-// Update verse display as audio plays
 document.getElementById('audio').addEventListener('timeupdate', function() {
   if (!currentSurah?.verses) return
-  const progress = this.currentTime / (this.duration || 1)
-  const verseIdx = Math.min(
-    Math.floor(progress * currentSurah.verses.length),
-    currentSurah.verses.length - 1
-  )
+  const progress  = this.currentTime / (this.duration || 1)
+  const verseIdx  = Math.min(Math.floor(progress * currentSurah.verses.length), currentSurah.verses.length - 1)
   document.getElementById('verseDisplay').textContent = currentSurah.verses[verseIdx]?.text_uthmani || ''
 })
 
-// Idle pattern
-brainToPattern({ auditory: 0.1, language: 0.1, emotion: 0.2, contemplation: 0.6, memory: 0.1 }, 0)
+// ── Idle render ───────────────────────────────────────────────
+brainToPattern(currentBrainState, 0)
+drawFlatmap(currentBrainState)
 </script>
 
 </body>
